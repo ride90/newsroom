@@ -1019,21 +1019,28 @@ article.list {
         overflow: auto;
 
         .tab-pane {
-            padding: 20px 20px 0 20px;
+            padding: 20px;
 
             #reset-filter-buffer {
                 height: 80px;
             }
 
-            #reset-filter {
+            .filter-button {
                 position: absolute;
-                bottom: 0;
                 left: 0;
                 right: 15px;
-                padding: 20px 20px 0 20px;
+                padding: 10px 20px 0 20px;
                 background: $nav-sidebar-bg;
-                border-top: 1px solid $nav-sidebar-border;
                 opacity: 0.8;
+
+                &.reset {
+                    bottom: 0;
+                }
+
+                &.search {
+                    bottom: 50px;
+                    border-top: 1px solid $nav-sidebar-border;
+                }
             }
         }
     }
@@ -1075,18 +1082,18 @@ article.list {
 }
 .wire-column__main-header {
     flex-shrink: 0;
-    height: 46px;
+    height: 36px;
     transition: all .2s ease;
     z-index: 10;
     
     @include lg {
-        height: 56px;
+        height: 42px;
     }
     
     &--small {
         background: white;
         box-shadow: 0 2px 3px rgba(0, 0, 0, 0.2);
-        height: 46px;
+        height: 36px;
 
         .btn-sm {
             @include sm {
@@ -1214,7 +1221,6 @@ article.list {
 }
 
 .wire-articles--list {
-    overflow: auto;
     padding-top: 20px;
     margin-top: 0;
 }
@@ -1822,18 +1828,16 @@ article.list {
     padding: 10px 10px 5px 20px;
     flex-shrink: 0;
     @include xl {
-        padding: 20px 10px 20px 20px;
+        padding: 15px 10px 20px 20px;
     }
 }
 
 .wire-column__preview__date {
     color: #747474;
     line-height: 1rem;
-    padding: 0 10px 15px 20px;
     font-size: .8125rem;
     @include xl {
-        padding: 0 10px 20px 20px;
-        font-size: 1rem;
+        font-size: .8125rem;
     }
 }
 
@@ -1869,6 +1873,7 @@ article.list {
 
 .wire-column__preview__author {
     color: #626262;
+    font-size: 0.9375rem;
     font-weight: 300;
     .bold {
         color: #222222;
@@ -2138,6 +2143,20 @@ article.list {
     order: 2;
     flex: 1 1 100%;
     overflow: auto;
+    @include lg {
+        margin: 0px 40px 0px 10px;
+    }
+}
+
+.wire-column__preview__content--item-detail-preformatted-wrap {
+    display: flex;
+    flex-direction: column;
+    margin: 30px 0 20px 0;
+}
+
+.wire-column__preview__content--item-detail-item-preformatted {
+    order: 2;
+    flex: 1 1 100%;
     @include lg {
         margin: 0px 40px 0px 10px;
     }
