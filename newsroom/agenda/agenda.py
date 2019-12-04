@@ -18,13 +18,13 @@ from newsroom.auth import get_user
 from newsroom.companies import get_user_company
 from newsroom.notifications import push_notification
 from newsroom.template_filters import is_admin_or_internal, is_admin
-from newsroom.utils import get_user_dict, get_company_dict, get_entity_or_404
+from newsroom.utils import get_user_dict, get_company_dict, get_entity_or_404, parse_date_str
 from newsroom.wire.search import query_string, set_product_query, \
     planning_items_query_string, nested_query
 from newsroom.wire.utils import get_local_date, get_end_date
 from datetime import datetime
 from newsroom.wire import url_for_wire
-from .utils import get_latest_available_delivery
+from .utils import get_latest_available_delivery, TO_BE_CONFIRMED_FIELD
 
 
 logger = logging.getLogger(__name__)
@@ -151,6 +151,7 @@ class AgendaResource(newsroom.Resource):
                 'slugline': not_analyzed,
                 'delivery_id': not_analyzed,  # To point ot the latest published item
                 'delivery_href': not_analyzed,  # To point ot the latest published item
+                TO_BE_CONFIRMED_FIELD: {'type': 'boolean'},
                 'deliveries': {  # All deliveries (incl. updates go here)
                     'type': 'object',
                     'properties': {
@@ -474,16 +475,7 @@ class AgendaService(newsroom.Service):
 
     def enhance_items(self, docs):
         for doc in docs:
-            # Enhance completed coverages in general - add story's abstract/headline/slugline
-            delivery_ids = [c.get('delivery_id') for c in (doc.get('coverages') or [])
-                            if c.get('delivery_id') and c['workflow_status'] == ASSIGNMENT_WORKFLOW_STATE.COMPLETED]
-            wire_search_service = get_resource_service('wire_search')
-            if delivery_ids:
-                wire_items = wire_search_service.get_items(delivery_ids)
-                if wire_items.count() > 0:
-                    for item in wire_items:
-                        c = [c for c in doc.get('coverages') if c.get('delivery_id') == item.get('_id')][0]
-                        self.enhance_coverage_with_wire_details(c, item)
+            self.enhance_coverages(doc.get('coverages') or [])
 
             # Filter based on _inner_hits
             inner_hits = doc.pop('_inner_hits', None)
@@ -495,6 +487,25 @@ class AgendaService(newsroom.Service):
                 continue
             doc['planning_items'] = [p for p in doc['planning_items'] or [] if p.get('guid') in items_by_key]
             doc['coverages'] = [c for c in (doc.get('coverages') or []) if c.get('planning_id') in items_by_key]
+
+    def enhance_coverages(self, coverages):
+        completed_coverages = [c for c in coverages if c['workflow_status'] == ASSIGNMENT_WORKFLOW_STATE.COMPLETED
+                               and len(c.get('deliveries') or []) > 0]
+        # Enhance completed coverages in general - add story's abstract/headline/slugline
+        text_delivery_ids = [c.get('delivery_id') for c in completed_coverages if c.get('delivery_id') and
+                             c.get('coverage_type') == 'text']
+        wire_search_service = get_resource_service('wire_search')
+        if text_delivery_ids:
+            wire_items = wire_search_service.get_items(text_delivery_ids)
+            if wire_items.count() > 0:
+                for item in wire_items:
+                    c = [c for c in completed_coverages if c.get('delivery_id') == item.get('_id')][0]
+                    self.enhance_coverage_with_wire_details(c, item)
+
+        media_coverages = [c for c in completed_coverages if c.get('coverage_type') != 'text']
+        for c in media_coverages:
+            c['deliveries'][0]['delivery_href'] = c['delivery_href'] = app.set_photo_coverage_href(c, None,
+                                                                                                   c['deliveries'])
 
     def enhance_coverage_with_wire_details(self, coverage, wire_item):
         coverage['publish_time'] = wire_item.get('publish_schedule') or wire_item.get('firstpublished')
@@ -510,11 +521,15 @@ class AgendaService(newsroom.Service):
         get_resource_service('section_filters').apply_section_filter(query, self.section)
         product_query = {'bool': {'must': [], 'should': []}}
 
+        navigation_id = req.args.get('navigation')
+        if navigation_id:
+            navigation_id = list(navigation_id.split(','))
+
         set_product_query(
             product_query,
             company,
             self.section,
-            navigation_id=req.args.get('navigation'),
+            navigation_id=navigation_id,
             events_only=is_events_only
         )
         query['bool']['must'].append(product_query)
@@ -747,6 +762,13 @@ class AgendaService(newsroom.Service):
                     coverage['delivery_href'] = url_for_wire(None, _external=False, section='wire.item',
                                                              _id=wire_item['guid'])
                     coverage['workflow_status'] = ASSIGNMENT_WORKFLOW_STATE.COMPLETED
+                    deliveries = coverage['deliveries']
+                    d = next((d for d in deliveries if d.get('delivery_id') == wire_item['guid']), None)
+                    if d and d.get('delivery_state') != 'published':
+                        d['delivery_state'] = 'published'
+                        d['publish_time'] = parse_date_str(wire_item.get('publish_schedule') or
+                                                           wire_item.get('firstpublished'))
+
                     self.system_update(item['_id'], {'coverages': coverages}, item)
                     updated_agenda = get_entity_or_404(item.get('_id'), 'agenda')
 

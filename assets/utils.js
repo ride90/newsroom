@@ -9,7 +9,7 @@ import thunk from 'redux-thunk';
 import { render as _render } from 'react-dom';
 import alertify from 'alertifyjs';
 import moment from 'moment';
-import {hasCoverages, isCoverageForExtraDay, SCHEDULE_TYPE} from './agenda/utils';
+import {hasCoverages, isCoverageForExtraDay, SCHEDULE_TYPE, isItemTBC, TO_BE_CONFIRMED_TEXT} from './agenda/utils';
 
 export const now = moment(); // to enable mocking in tests
 const NEWSROOM = 'newsroom';
@@ -17,23 +17,39 @@ const CLIENT_CONFIG = 'client_config';
 
 export const TIME_FORMAT = getConfig('time_format');
 export const DATE_FORMAT = getConfig('date_format', 'DD-MM-YYYY');
+export const COVERAGE_DATE_TIME_FORMAT = getConfig('coverage_date_time_format');
 export const COVERAGE_DATE_FORMAT = getConfig('coverage_date_format');
 const DATETIME_FORMAT = `${TIME_FORMAT} ${DATE_FORMAT}`;
 export const DAY_IN_MINUTES = 24 * 60 - 1;
 export const LIST_ANIMATIONS = getConfig('list_animations', true);
+export const DISPLAY_NEWS_ONLY = getConfig('display_news_only', true);
+export const KEYCODES = {
+    ENTER: 13,
+    DOWN: 40,
+};
+
 
 
 /**
  * Create redux store with default middleware
  *
  * @param {func} reducer
+ * @param {String} name
  * @return {Store}
  */
-export function createStore(reducer) {
+export function createStore(reducer, name = 'default') {
     const logger = createLogger({
         duration: true,
         collapsed: true,
         timestamp: false,
+        titleFormatter: (action, time, took) => (
+            // Adds the name of the store to the console logs
+            // derived based on the defaultTitleFormatter from redux-logger
+            // https://github.com/LogRocket/redux-logger/blob/master/src/core.js#L25
+            (action && action.type) ?
+                `${name} - action ${String(action.type)} (in ${took.toFixed(2)} ms)` :
+                `${name} - action (in ${took.toFixed(2)} ms)`
+        ),
     });
 
     return _createStore(reducer, applyMiddleware(thunk, logger));
@@ -46,10 +62,10 @@ export function createStore(reducer) {
  * @param {Component} App
  * @param {Element} element
  */
-export function render(store, App, element) {
+export function render(store, App, element, props) {
     return _render(
         <Provider store={store}>
-            <App />
+            <App {...props}/>
         </Provider>,
         element
     );
@@ -97,7 +113,7 @@ export function getProductQuery(product) {
  * @param {String} dateString
  * @return {Date}
  */
-function parseDate(dateString) {
+export function parseDate(dateString) {
     return moment(dateString);
 }
 
@@ -235,6 +251,7 @@ export function formatAgendaDate(item, group, localTimeZone = true) {
         return tzStr;
     };
 
+    const isTBCItem = isItemTBC(item);
     let start = parseDate(item.dates.start);
     let end = parseDate(item.dates.end);
     let duration = end.diff(start, 'minutes');
@@ -266,12 +283,20 @@ export function formatAgendaDate(item, group, localTimeZone = true) {
     }
 
     const scheduleType = getScheduleType(item);
+    let regulartTimeStr = `${formatTime(start)} - ${formatTime(end)} `;
+    if (isTBCItem) {
+        regulartTimeStr = localTimeZone ? `${TO_BE_CONFIRMED_TEXT} ` : '';
+    }
     if (duration === 0 || scheduleType === SCHEDULE_TYPE.NO_DURATION) {
-        dateTimeString.push(`${formatTime(start)}`);
+        dateTimeString.push(isTBCItem ? `${regulartTimeStr}` : `${formatTime(start)}`);
     } else {
         switch(scheduleType) {
         case SCHEDULE_TYPE.MULTI_DAY:
-            dateTimeString.push(`${formatTime(start)} ${formatDate(start)} to ${formatTime(end)} ${formatDate(end)}`);
+            if (isTBCItem) {
+                dateTimeString.push(`${formatDate(start)} to ${formatDate(end)}`);
+            } else {
+                dateTimeString.push(`${formatTime(start)} ${formatDate(start)} to ${formatTime(end)} ${formatDate(end)}`);
+            }
             break;
 
         case SCHEDULE_TYPE.ALL_DAY:
@@ -280,9 +305,9 @@ export function formatAgendaDate(item, group, localTimeZone = true) {
 
         case SCHEDULE_TYPE.REGULAR:
             if (localTimeZone) {
-                dateTimeString.push(`${formatTime(start)} - ${formatTime(end)}`);
+                dateTimeString.push(regulartTimeStr);
             } else {
-                dateTimeString.push(`${formatTime(start)} - ${formatTime(end)} ${formatDate(start)}`);
+                dateTimeString.push(`${regulartTimeStr}${formatDate(start)}`);
             }
             break;
         }
@@ -293,17 +318,6 @@ export function formatAgendaDate(item, group, localTimeZone = true) {
     }
 
     return dateTimeString;
-}
-
-
-/**
- * Format coverage date ('HH:mm DD/MM')
- *
- * @param {String} dateString
- * @return {String}
- */
-export function formatCoverageDate(dateString) {
-    return parseDate(dateString).format(COVERAGE_DATE_FORMAT);
 }
 
 /**
@@ -438,12 +452,12 @@ export function toggleValue(items, value) {
 }
 
 
-export function updateRouteParams(updates, state) {
+export function updateRouteParams(updates, state, deleteEmpty = true) {
     const params = new URLSearchParams(window.location.search);
 
     Object.keys(updates).forEach((key) => {
         let updatedValue = updates[key];
-        if (!isEmpty(updatedValue) || typeof updatedValue === 'boolean') {
+        if (!deleteEmpty || !isEmpty(updatedValue) || typeof updatedValue === 'boolean') {
             if (typeof updatedValue === 'object') {
                 updatedValue = JSON.stringify(updatedValue);
             }
@@ -452,7 +466,6 @@ export function updateRouteParams(updates, state) {
             params.delete(key);
         }
     });
-
 
     const stateClone = cloneDeep(state);
     stateClone.items = [];
@@ -585,10 +598,25 @@ export function postHistoryAction(item, action, section='wire') {
     }).catch((error) => errorHandler(error));
 }
 
-export function recordAction(item, action = 'open', section = 'wire') {
+export function recordAction(item, action = 'open', section = 'wire', state = null) {
     if (item) {
         analytics.itemEvent(action, item);
         analytics.itemView(item);
         postHistoryAction(item, action, section);
+
+        if (action === 'preview') {
+            updateRouteParams({}, {
+                ...state,
+                previewItem: get(item, '_id')
+            });
+        }
     }
 }
+
+export function closeItemOnMobile(dispatch, state, openItemDetails, previewItem) {
+    if (isMobilePhone()) {
+        dispatch(openItemDetails(null));
+        dispatch(previewItem(null));
+    }
+}
+

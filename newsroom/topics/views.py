@@ -31,7 +31,10 @@ def update_topic(id):
     updates = {
         'label': data.get('label'),
         'notifications': data.get('notifications', False),
-        'query': data.get('query')
+        'query': data.get('query'),
+        'created': data.get('created'),
+        'filter': data.get('filter'),
+        'navigation': data.get('navigation'),
     }
 
     get_resource_service('topics').patch(id=ObjectId(id), updates=updates)
@@ -68,7 +71,11 @@ def get_topic_url(topic):
     if topic.get('filter'):
         query_strings.append('filter={}'.format(parse.quote(json.dumps(topic.get('filter')))))
     if topic.get('navigation'):
-        query_strings.append('navigation={}'.format(topic.get('navigation')))
+        query_strings.append(
+            'navigation={}'.format(
+                parse.quote(json.dumps(topic.get('navigation')))
+            )
+        )
     if topic.get('created'):
         query_strings.append('created={}'.format(parse.quote(json.dumps(topic.get('created')))))
 
@@ -88,7 +95,7 @@ def share():
     data = get_json_or_400()
     assert data.get('users')
     assert data.get('items')
-    topic = get_entity_or_404(data.get('items')[0]['_id'], 'topics')
+    topic = get_entity_or_404(data.get('items')['_id'], 'topics')
     for user_id in data['users']:
         user = get_resource_service('users').find_one(req=None, _id=user_id)
         if not user or not user.get('email'):

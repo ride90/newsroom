@@ -34,6 +34,7 @@ from newsroom.template_filters import (
 from newsroom.celery_app import init_celery
 from newsroom.gettext import setup_babel
 import newsroom
+from superdesk.logging import configure_logging
 
 
 NEWSROOM_DIR = os.path.abspath(os.path.dirname(__file__))
@@ -100,6 +101,7 @@ class Newsroom(eve.Eve):
         self._setup_cache()
         self._setup_error_handlers()
         self._setup_theme()
+        configure_logging(app_config.get('LOG_CONFIG_FILE'))
 
     def load_config(self):
         # Override Eve.load_config in order to get default_settings
@@ -218,7 +220,7 @@ class Newsroom(eve.Eve):
             return flask.send_from_directory(self.theme_folder, filename)
         return self.send_static_file(filename)
 
-    def section(self, _id, name, group):
+    def section(self, _id, name, group, search_type=None):
         """Define new app section.
 
         App sections are used for permissions in company settings,
@@ -249,7 +251,8 @@ class Newsroom(eve.Eve):
         self.sections.append({
             '_id': _id,
             'name': name,
-            'group': group
+            'group': group,
+            'search_type': search_type
         })
 
     def sidenav(self, name, endpoint=None, icon=None, group=0, section=None, blueprint=None, badge=None, url=None,

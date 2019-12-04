@@ -17,7 +17,7 @@ def get_settings_data():
     return {
         'products': list(query_resource('products')),
         'navigations': list(query_resource('navigations')),
-        'sections': app.sections,
+        'sections': [s for s in app.sections if s.get('_id') != 'watch_lists'],  # watch_lists has no navigation
     }
 
 
@@ -28,7 +28,6 @@ def index():
 
 
 @blueprint.route('/navigations/search', methods=['GET'])
-@admin_only
 def search():
     lookup = None
     if flask.request.args.get('q'):

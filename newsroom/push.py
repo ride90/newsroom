@@ -20,7 +20,7 @@ from newsroom.wire.views import HOME_ITEMS_CACHE_KEY
 from newsroom.wire import url_for_wire
 from newsroom.upload import ASSETS_RESOURCE
 from newsroom.signals import publish_item as publish_item_signal
-from newsroom.agenda.utils import get_latest_available_delivery
+from newsroom.agenda.utils import get_latest_available_delivery, TO_BE_CONFIRMED_FIELD
 
 from planning.common import WORKFLOW_STATE
 
@@ -394,6 +394,7 @@ def set_agenda_metadata_from_planning(agenda, planning_item):
     plan['state_reason'] = planning_item.get('state_reason')
     plan['products'] = planning_item.get('products')
     plan['agendas'] = planning_item.get('agendas')
+    plan[TO_BE_CONFIRMED_FIELD] = planning_item.get(TO_BE_CONFIRMED_FIELD)
 
     if new_plan:
         agenda['planning_items'].append(plan)
@@ -459,7 +460,7 @@ def get_coverages(planning_items, original_coverages, new_plan):
     def get_existing_coverage(id):
         return next((o for o in original_coverages if o['coverage_id'] == id), {})
 
-    def set_delivery(coverage, deliveries):
+    def set_delivery(coverage, deliveries, orig_coverage=None):
         cov_deliveries = []
         if coverage['coverage_type'] == 'text':
             for d in (deliveries or []):
@@ -472,11 +473,17 @@ def get_coverages(planning_items, original_coverages, new_plan):
                 })
         else:
             if coverage.get('workflow_status') == 'completed':
-                cov_deliveries.append({
-                    'delivery_href': app.set_photo_coverage_href(coverage, planning_item),
-                    'sequence_no': 0,
-                    'delivery_state': 'published'
-                })
+                if orig_coverage['workflow_status'] != coverage['workflow_status']:
+                    cov_deliveries.append({
+                        'sequence_no': 0,
+                        'delivery_state': 'published',
+                        'publish_time': (next((parse_date_str(d.get('publish_time')) for d in deliveries), None) or
+                                         utcnow())
+                    })
+                    cov_deliveries[0]['delivery_href'] = app.set_photo_coverage_href(coverage, planning_item,
+                                                                                     cov_deliveries),
+                elif (len((orig_coverage or {}).get('deliveries') or []) > 0):
+                    cov_deliveries.append(orig_coverage['deliveries'][0])
 
         coverage['deliveries'] = cov_deliveries
         # Sort the deliveries in reverse sequence order here, so sorting required anywhere else
@@ -507,7 +514,10 @@ def get_coverages(planning_items, original_coverages, new_plan):
                     'coverage_provider': (coverage.get('coverage_provider') or {}).get('name')
                 }
 
-                set_delivery(new_coverage, coverage.get('deliveries'))
+                if TO_BE_CONFIRMED_FIELD in coverage:
+                    new_coverage[TO_BE_CONFIRMED_FIELD] = coverage[TO_BE_CONFIRMED_FIELD]
+
+                set_delivery(new_coverage, coverage.get('deliveries'), existing_coverage)
                 coverages.append(new_coverage)
 
                 if ((coverage and not existing_coverage) or ((new_plan or {}).get('_id')) == planning_item.get('_id')):
@@ -626,7 +636,7 @@ def notify_user_matches(item, users_dict, companies_dict, user_ids, company_ids)
     for section_id in [
         section['_id']
         for section in app.sections
-        if section['_id'] != 'wire' and section['group'] != 'api'
+        if section['_id'] != 'wire' and section['group'] not in ['api', 'watch_lists']
     ]:
         # Add the users for those sections and send the notification
         _send_notification(section_id, _get_users(section_id))

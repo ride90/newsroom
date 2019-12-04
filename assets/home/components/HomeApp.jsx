@@ -1,8 +1,8 @@
 import React from 'react';
 import PropTypes from 'prop-types';
 import {connect} from 'react-redux';
-import {gettext, isMobilePhone} from 'utils';
-import { get } from 'lodash';
+import {gettext, isDisplayed, isMobilePhone} from 'utils';
+import {get} from 'lodash';
 import {
     getCardDashboardComponent,
 } from 'components/cards/utils';
@@ -11,15 +11,14 @@ import {
 import getItemActions from 'wire/item-actions';
 import ItemDetails from 'wire/components/ItemDetails';
 import {openItemDetails, setActive, fetchCardExternalItems} from '../actions';
-import FollowTopicModal from 'components/FollowTopicModal';
 import ShareItemModal from 'components/ShareItemModal';
 import DownloadItemsModal from 'wire/components/DownloadItemsModal';
-import WirePreview from '../../wire/components/WirePreview';
-import {followTopic} from '../../search/actions';
-import {downloadVideo} from '../../wire/actions';
+import WirePreview from 'wire/components/WirePreview';
+import {followStory} from 'search/actions';
+import {downloadVideo} from 'wire/actions';
+import {previewConfigSelector} from 'ui/selectors';
 
 const modals = {
-    followTopic: FollowTopicModal,
     shareItem: ShareItemModal,
     downloadItems: DownloadItemsModal,
 };
@@ -102,8 +101,9 @@ class HomeApp extends React.Component {
         />;
     }
 
-    filterActions(item) {
-        return this.props.actions.filter((action) => !action.when || action.when(this.props, item));
+    filterActions(item, config) {
+        return this.props.actions.filter((action) =>  (!config || isDisplayed(action.id, config)) &&
+          (!action.when || action.when(this.props, item)));
     }
 
     renderContent(children) {
@@ -133,7 +133,7 @@ class HomeApp extends React.Component {
             (this.props.itemToOpen ? [<ItemDetails key="itemDetails"
                 item={this.props.itemToOpen}
                 user={this.props.user}
-                actions={this.filterActions(this.props.itemToOpen)}
+                actions={this.filterActions(this.props.itemToOpen, this.props.previewConfig)}
                 onClose={() => this.props.actions.filter(a => a.id === 'open')[0].action(null)}
             />, modal] :
                 this.renderContent()
@@ -152,7 +152,7 @@ class HomeApp extends React.Component {
                     <WirePreview
                         item={this.props.itemToOpen}
                         user={this.props.user}
-                        actions={this.filterActions(this.props.itemToOpen)}
+                        actions={this.filterActions(this.props.itemToOpen, this.props.previewConfig)}
                         followStory={this.props.followStory}
                         isFollowing={!!isFollowing}
                         closePreview={() => this.props.actions.filter(a => a.id === 'open')[0].action(null)}
@@ -204,7 +204,7 @@ const mapStateToProps = (state) => ({
     itemToOpen: state.itemToOpen,
     modal: state.modal,
     activeCard: state.activeCard,
-    previewConfig: get(state.uiConfig, 'preview') || {},
+    previewConfig: previewConfigSelector(state),
     topics: state.topics || [],
 });
 
@@ -215,7 +215,7 @@ const mapDispatchToProps = (dispatch) => ({
     },
     actions: getItemActions(dispatch),
     fetchCardExternalItems: (cardId, cardLabel) => dispatch(fetchCardExternalItems(cardId, cardLabel)),
-    followStory: (item) => dispatch(followTopic({label: item.slugline, query: `slugline:"${item.slugline}"`}, 'wire')),
+    followStory: (item) => followStory(item, 'wire'),
     downloadVideo: (href, id, mimeType) => dispatch(downloadVideo(href, id, mimeType))
 });
 

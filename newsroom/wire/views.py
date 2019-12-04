@@ -102,7 +102,8 @@ def get_home_data():
         'products': get_products_by_company(company_id),
         'user': str(user['_id']) if user else None,
         'company': company_id,
-        'formats': [{'format': f['format'], 'name': f['name']} for f in app.download_formatters.values()],
+        'formats': [{'format': f['format'], 'name': f['name'], 'types': f['types']}
+                    for f in app.download_formatters.values()],
         'context': 'wire',
     }
 
@@ -171,10 +172,11 @@ def download(_ids):
     formatter = app.download_formatters[_format]['formatter']
     mimetype = None
     attachment_filename = '%s-newsroom.zip' % utcnow().strftime('%Y%m%d%H%M')
-    if len(items) == 1:
+    if len(items) == 1 or _format == 'watch_lists':
         item = items[0]
+        args_item = item if _format != 'watch_lists' else items
         parse_dates(item)  # fix for old items
-        _file.write(formatter.format_item(item, item_type=item_type))
+        _file.write(formatter.format_item(args_item, item_type=item_type))
         _file.seek(0)
         mimetype = formatter.get_mimetype(item)
         attachment_filename = secure_filename(formatter.format_filename(item))

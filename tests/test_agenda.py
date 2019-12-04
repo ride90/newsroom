@@ -1,11 +1,19 @@
 import pytz
 from flask import json
 from datetime import datetime
+from urllib import parse
+from unittest import mock
+
 from newsroom.wire.utils import get_local_date, get_end_date
 from newsroom.utils import get_location_string, get_agenda_dates, get_public_contacts
 from .fixtures import items, init_items, agenda_items, init_agenda_items, init_auth, init_company, PUBLIC_USER_ID  # noqa
 from .utils import post_json, delete_json, get_json, get_admin_user_id, mock_send_email
-from unittest import mock
+
+date_time_format = '%Y-%m-%dT%H:%M:%S'
+
+
+def mock_utcnow():
+    return datetime.strptime('2018-11-23T22:00:00', date_time_format)
 
 
 def test_item_detail(client):
@@ -101,7 +109,7 @@ def test_share_items(client, app, mocker):
         assert 'Hi Foo Bar' in outbox[0].body
         assert 'admin admin (admin@sourcefabric.org) shared ' in outbox[0].body
         assert 'Conference Planning' in outbox[0].body
-        assert 'http://localhost:5050/agenda/urn:conference' in outbox[0].body
+        assert 'http://localhost:5050/agenda?item=urn%3Aconference' in outbox[0].body
         assert 'Some info message' in outbox[0].body
 
     resp = client.get('/agenda/{}?format=json'.format('urn:conference'))
@@ -177,7 +185,7 @@ def test_coverage_request(client, app):
         assert outbox[0].subject == 'A new coverage request'
         assert 'admin admin' in outbox[0].body
         assert 'admin@sourcefabric.org' in outbox[0].body
-        assert 'http://localhost:5050/agenda/urn:conference' in outbox[0].body
+        assert 'http://localhost:5050/agenda?item={}'.format(parse.quote('urn:conference')) in outbox[0].body
         assert 'Some info message' in outbox[0].body
 
 
@@ -192,34 +200,32 @@ def test_watch_event(client, app):
     assert 0 == get_bookmarks_count(client, user_id)
 
 
+@mock.patch('newsroom.wire.utils.get_utcnow', mock_utcnow)
 def test_local_time(client, app, mocker):
     # 9 am Sydney Time - day light saving on
-    format = '%Y-%m-%dT%H:%M:%S'
-    test_utcnow = datetime.strptime('2018-11-23T22:00:00', format)
-    with mocker.patch('newsroom.wire.utils.get_utcnow', return_value=test_utcnow):
-        local_date = get_local_date('now/d', '00:00:00', -660)
-        assert '2018-11-23T13:00:00' == local_date.strftime(format)
+    local_date = get_local_date('now/d', '00:00:00', -660)
+    assert '2018-11-23T13:00:00' == local_date.strftime(date_time_format)
 
-        local_date = get_local_date('now/w', '00:00:00', -660)
-        assert '2018-11-18T13:00:00' == local_date.strftime(format)
+    local_date = get_local_date('now/w', '00:00:00', -660)
+    assert '2018-11-18T13:00:00' == local_date.strftime(date_time_format)
 
-        local_date = get_local_date('now/M', '00:00:00', -660)
-        assert '2018-10-31T13:00:00' == local_date.strftime(format)
+    local_date = get_local_date('now/M', '00:00:00', -660)
+    assert '2018-10-31T13:00:00' == local_date.strftime(date_time_format)
 
-        local_date = get_local_date('2018-11-24', '00:00:00', -660)
-        assert '2018-11-23T13:00:00' == local_date.strftime(format)
+    local_date = get_local_date('2018-11-24', '00:00:00', -660)
+    assert '2018-11-23T13:00:00' == local_date.strftime(date_time_format)
 
-        end_local_date = get_local_date('2018-11-24', '23:59:59', -660)
-        assert '2018-11-24T12:59:59' == end_local_date.strftime(format)
+    end_local_date = get_local_date('2018-11-24', '23:59:59', -660)
+    assert '2018-11-24T12:59:59' == end_local_date.strftime(date_time_format)
 
-        end_date = get_end_date('now/d', end_local_date)
-        assert '2018-11-24T12:59:59' == end_date.strftime(format)
+    end_date = get_end_date('now/d', end_local_date)
+    assert '2018-11-24T12:59:59' == end_date.strftime(date_time_format)
 
-        end_date = get_end_date('now/w', end_local_date)
-        assert '2018-11-30T12:59:59' == end_date.strftime(format)
+    end_date = get_end_date('now/w', end_local_date)
+    assert '2018-11-30T12:59:59' == end_date.strftime(date_time_format)
 
-        end_date = get_end_date('now/M', end_local_date)
-        assert '2018-12-23T12:59:59' == end_date.strftime(format)
+    end_date = get_end_date('now/M', end_local_date)
+    assert '2018-12-23T12:59:59' == end_date.strftime(date_time_format)
 
 
 def test_get_location_string():

@@ -6,12 +6,14 @@ import { get, isEqual } from 'lodash';
 import classNames from 'classnames';
 import moment from 'moment';
 
-import { gettext, DATE_FORMAT } from 'utils';
+import {gettext, DATE_FORMAT, isDisplayed} from 'utils';
 import AgendaListItem from './AgendaListItem';
 import { setActive, previewItem, toggleSelected, openItem } from '../actions';
 import { EXTENDED_VIEW } from 'wire/defaults';
 import { getIntVersion } from 'wire/utils';
 import { groupItems, getPlanningItemsByGroup, getListItems } from 'agenda/utils';
+import {searchNavigationSelector} from 'search/selectors';
+import {previewConfigSelector} from 'ui/selectors';
 
 
 const PREVIEW_TIMEOUT = 500; // time to preview an item after selecting using kb
@@ -160,8 +162,9 @@ class AgendaList extends React.Component {
         }
     }
 
-    filterActions(item) {
-        return this.props.actions.filter((action) => !action.when || action.when(this.props, item));
+    filterActions(item, config) {
+        return this.props.actions.filter((action) =>  (!config || isDisplayed(action.id, config)) &&
+          (!action.when || action.when(this.props, item)));
     }
 
     isActiveItem(_id, group, plan) {
@@ -246,7 +249,7 @@ class AgendaList extends React.Component {
                                             group.date === this.state.activeGroup &&
                                             plan.guid === get(this.state.activePlan, 'guid')}
                                             toggleSelected={() => this.props.dispatch(toggleSelected(_id))}
-                                            actions={this.filterActions(itemsById[_id])}
+                                            actions={this.filterActions(itemsById[_id], this.props.previewConfig)}
                                             isExtended={isExtended}
                                             user={this.props.user}
                                             actioningItem={this.state.actioningItem}
@@ -269,7 +272,7 @@ class AgendaList extends React.Component {
                                 showActions={!!this.state.actioningItem &&
                                 this.state.actioningItem._id === _id && group.date === this.state.activeGroup}
                                 toggleSelected={() => this.props.dispatch(toggleSelected(_id))}
-                                actions={this.filterActions(itemsById[_id])}
+                                actions={this.filterActions(itemsById[_id], this.props.previewConfig)}
                                 isExtended={isExtended}
                                 user={this.props.user}
                                 actioningItem={this.state.actioningItem}
@@ -327,12 +330,13 @@ AgendaList.propTypes = {
     groupedItems: PropTypes.array,
     activeDate: PropTypes.number,
     searchInitiated: PropTypes.bool,
-    activeNavigation: PropTypes.string,
+    activeNavigation: PropTypes.arrayOf(PropTypes.string),
     resultsFiltered: PropTypes.bool,
     listItems: PropTypes.array,
     isLoading: PropTypes.bool,
     onScroll: PropTypes.func,
     refNode: PropTypes.func,
+    previewConfig: PropTypes.object,
 };
 
 const mapStateToProps = (state) => ({
@@ -349,10 +353,11 @@ const mapStateToProps = (state) => ({
     groupedItems: groupedItemsSelector(state),
     activeDate: get(state, 'agenda.activeDate'),
     searchInitiated: state.searchInitiated,
-    activeNavigation: get(state, 'search.activeNavigation', null),
+    activeNavigation: searchNavigationSelector(state),
     resultsFiltered: state.resultsFiltered,
     listItems: listItemsSelector(state),
     isLoading: state.isLoading,
+    previewConfig: previewConfigSelector(state),
 });
 
 export default connect(mapStateToProps)(AgendaList);
